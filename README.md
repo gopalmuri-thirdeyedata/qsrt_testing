@@ -52,8 +52,8 @@ qsrt_testing/                    ← GitHub repo root
 ### 2. Clone the repo
 
 ```bash
-git clone https://github.com/<your-username>/qsrt_project.git
-cd qsrt_project
+git clone https://github.com/gopalmuri-thirdeyedata/qsrt_testing.git
+cd qsrt_testing
 ```
 
 ---
@@ -102,7 +102,7 @@ pip install torch torchvision
 Place your YOLOv8 model weights in the project root:
 
 ```
-qsrt_project/
+qsrt_testing/
 └── best_16062026.pt   ← put your model here
 ```
 

@@ -137,6 +137,10 @@ threading.Thread(target=_cpu_monitor, daemon=True).start()
 batch_jobs      = {}
 batch_jobs_lock = threading.Lock()
 
+# ── Batch live frame cache (latest annotated JPEG per job for preview) ────────
+batch_frame_cache = {}   # { job_id: bytes (JPEG) }
+batch_frame_lock  = threading.Lock()
+
 # ──────────────────────────────────────────────────────────────────────────────
 # ROUTES
 # ──────────────────────────────────────────────────────────────────────────────
@@ -382,6 +386,11 @@ def _run_batch_job(job_id, video_path, imgsz, conf):
             writer.write(annotated)
             frame_idx += 1
 
+            # Cache latest frame as JPEG for live UI preview (every frame)
+            _, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 72])
+            with batch_frame_lock:
+                batch_frame_cache[job_id] = jpeg.tobytes()
+
             # Update progress every 10 frames
             if frame_idx % 10 == 0:
                 elapsed  = time.time() - t_start
@@ -402,6 +411,9 @@ def _run_batch_job(job_id, video_path, imgsz, conf):
             batch_jobs[job_id].update({"status": "error", "error": str(e)})
         cap.release()
         writer.release()
+        # Clear frame cache on error
+        with batch_frame_lock:
+            batch_frame_cache.pop(job_id, None)
         return
     finally:
         cap.release()
@@ -409,6 +421,10 @@ def _run_batch_job(job_id, video_path, imgsz, conf):
 
     elapsed = time.time() - t_start
     log_backend(f"[BATCH JOB {job_id[:8]}] Done in {elapsed:.1f}s → {out_name}")
+
+    # Clear frame cache after job finishes
+    with batch_frame_lock:
+        batch_frame_cache.pop(job_id, None)
 
     with batch_jobs_lock:
         batch_jobs[job_id].update({
@@ -463,6 +479,25 @@ def batch_status(job_id):
     return jsonify({"success": True, **job})
 
 
+
+@app.route("/batch_preview/<job_id>")
+def batch_preview(job_id):
+    """Live MJPEG stream of the latest annotated frame from an active batch job."""
+    def _generate():
+        while True:
+            with batch_jobs_lock:
+                job = batch_jobs.get(job_id)
+            if job is None:
+                break
+            with batch_frame_lock:
+                frame = batch_frame_cache.get(job_id)
+            if frame:
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            if job["status"] in ("done", "error"):
+                break
+            time.sleep(0.08)
+
+    return Response(_generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
 @app.route("/download_annotated/<filename>")
 def download_annotated(filename):
     """Serve a processed annotated video for download."""

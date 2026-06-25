@@ -348,6 +348,17 @@
         .device-badge.cpu  { border-color: rgba(6,182,212,0.25);  background: rgba(6,182,212,0.05);  }
         .vram-bar-bg { height: 4px; background: rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; margin-top:0.3rem; }
         .vram-bar-fill { height:100%; background: var(--accent-success); border-radius:3px; transition: width 1s ease; }
+        .batch-processing-layout {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        @media (max-width: 1100px) {
+            .batch-processing-layout {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -543,13 +554,32 @@
                 </div>
             </div>
 
-            <!-- Live queue / progress -->
-            <div class="card" id="batch-queue-card" style="display:none;">
-                <h2 style="margin-bottom:0.5rem;">📋 Processing Queue</h2>
-                <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:1rem;" id="batch-queue-summary">
-                    Initialising…
+            <!-- Live queue / progress container -->
+            <div class="batch-processing-layout" id="batch-processing-container" style="display:none;">
+                <!-- Queue card -->
+                <div class="card" id="batch-queue-card" style="margin-top:0;">
+                    <h2 style="margin-bottom:0.5rem;">📋 Processing Queue</h2>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:1rem;" id="batch-queue-summary">
+                        Initialising…
+                    </div>
+                    <div class="batch-queue" id="batch-queue"></div>
                 </div>
-                <div class="batch-queue" id="batch-queue"></div>
+
+                <!-- Live Preview Card -->
+                <div class="card" id="batch-preview-card" style="display:flex; flex-direction:column; margin-top:0;">
+                    <h2 style="margin-bottom:0.5rem;">📺 Live Processing Feed</h2>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:1rem;" id="batch-preview-title">
+                        Waiting for active job…
+                    </div>
+                    <div class="media-container" style="min-height:350px; flex:1;">
+                        <div class="loading-overlay" id="batch-preview-loading" style="display:none;">
+                            <div class="spinner"></div>
+                            <div class="loading-text">Connecting to preview feed…</div>
+                        </div>
+                        <img id="batch-preview-img" class="media-view" style="width:100%;height:100%;object-fit:contain;" alt="Live Batch Feed">
+                        <div class="placeholder-text" id="batch-preview-ph">Preview will appear here when processing starts</div>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -565,6 +595,7 @@
 
 <script>
 const API_BASE = 'http://127.0.0.1:5000';
+let activeBatchJobId = null;
 
 // ── Logging ──────────────────────────────────────────────────────────────────
 function addLog(source, message, type = 'info') {
@@ -618,6 +649,24 @@ tabs.forEach(({ btn, content }) => {
         const isVideo = content === 'tab-video-content';
         document.getElementById('video-fps-group').style.display = isVideo ? 'block' : 'none';
         if (!isVideo) stopAllVideoStreams();
+
+        // Manage batch preview feed connection on tab switch
+        const previewImg = document.getElementById('batch-preview-img');
+        if (previewImg) {
+            if (content === 'tab-batch-content' && activeBatchJobId) {
+                previewImg.src = `${API_BASE}/batch_preview/${activeBatchJobId}`;
+                previewImg.style.display = 'block';
+                document.getElementById('batch-preview-ph').style.display = 'none';
+            } else {
+                previewImg.src = '';
+                previewImg.style.display = 'none';
+                if (activeBatchJobId) {
+                    document.getElementById('batch-preview-ph').style.display = 'block';
+                    document.getElementById('batch-preview-ph').textContent = 'Processing continues in background. Return to this tab to see preview.';
+                }
+            }
+        }
+
         addLog('System', `Switched to ${btn.replace('tab-','').replace('-btn','')} tab.`, 'system');
     });
 });
@@ -828,6 +877,16 @@ function removeBatchFile(idx) {
 function clearBatchSelection() {
     batchFiles = [];
     renderBatchFileList();
+    document.getElementById('batch-processing-container').style.display = 'none';
+    const previewImg = document.getElementById('batch-preview-img');
+    if (previewImg) {
+        previewImg.src = '';
+        previewImg.style.display = 'none';
+    }
+    document.getElementById('batch-preview-ph').style.display = 'block';
+    document.getElementById('batch-preview-ph').textContent = 'Preview will appear here when processing starts';
+    document.getElementById('batch-preview-title').textContent = 'Waiting for active job…';
+    activeBatchJobId = null;
 }
 
 async function startBatchProcess() {
@@ -839,7 +898,7 @@ async function startBatchProcess() {
 
     // Prepare job list UI
     batchJobs = batchFiles.map(f => ({ file: f, jobId: null, status: 'pending', progress: 0, frames: 0, total: 0, outputFile: null }));
-    document.getElementById('batch-queue-card').style.display = 'block';
+    document.getElementById('batch-processing-container').style.display = 'grid';
     renderBatchQueue();
 
     const imgsz = document.getElementById('img-size').value;
@@ -888,8 +947,50 @@ async function startBatchProcess() {
         // 3) Poll until done
         job.status = 'processing';
         renderBatchQueue();
+
+        // Start live preview
+        activeBatchJobId = job.jobId;
+        const previewImg = document.getElementById('batch-preview-img');
+        const previewPh = document.getElementById('batch-preview-ph');
+        const previewTitle = document.getElementById('batch-preview-title');
+        const previewLoading = document.getElementById('batch-preview-loading');
+
+        previewTitle.textContent = `Processing: ${job.file.name}`;
+        previewPh.style.display = 'none';
+        previewLoading.style.display = 'flex';
+        previewImg.style.display = 'none';
+
+        // Check if currently on batch tab before setting src to avoid connection when active tab is not batch
+        const activeTab = document.querySelector('.tab-btn.active');
+        if (activeTab && activeTab.id === 'tab-batch-btn') {
+            previewImg.src = `${API_BASE}/batch_preview/${job.jobId}`;
+            previewImg.onload = () => {
+                previewLoading.style.display = 'none';
+                previewImg.style.display = 'block';
+            };
+        } else {
+            previewLoading.style.display = 'none';
+            previewPh.style.display = 'block';
+            previewPh.textContent = 'Processing continues in background. Return to this tab to see preview.';
+        }
+
         await pollUntilDone(job, i);
+
+        // Stop live preview for this job
+        activeBatchJobId = null;
+        previewImg.src = '';
+        previewImg.style.display = 'none';
+        previewLoading.style.display = 'none';
+        previewPh.style.display = 'block';
+        previewPh.textContent = job.status === 'done'
+            ? `Finished: ${job.file.name}`
+            : `Failed: ${job.file.name}`;
+        previewTitle.textContent = 'Waiting for next job…';
     }
+
+    // Update preview UI for batch completed
+    document.getElementById('batch-preview-title').textContent = 'Batch completed';
+    document.getElementById('batch-preview-ph').textContent = 'All jobs processed.';
 
     // Re-enable controls
     document.getElementById('btn-start-batch').disabled = false;
