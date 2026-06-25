@@ -1,0 +1,66 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+*.egg-info/
+*.egg
+dist/
+build/
+
+# ── Model files (large binaries — store with Git LFS or separately) ───────────
+*.onnx
+*.onnx.data
+# Keep .pt files tracked — comment out if you use Git LFS
+# *.pt
+
+# ── Video files ───────────────────────────────────────────────────────────────
+input_videos/
+output_annotated/
+uploads/
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+
+# ── Image test files ──────────────────────────────────────────────────────────
+test_image.jpg
+test_image.png
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Environment variables ─────────────────────────────────────────────────────
+.env
+.env.local
+*.env
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Pytest / coverage ─────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── OpenVINO exports (generated) ─────────────────────────────────────────────
+*_openvino_model/

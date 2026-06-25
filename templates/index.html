@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThirdEye — YOLO Live CPU Inference</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #060913;
+            --bg-secondary: #0d1222;
+            --bg-card: rgba(17, 24, 43, 0.75);
+            --border-color: rgba(6, 182, 212, 0.2);
+            --border-hover: rgba(6, 182, 212, 0.4);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #06b6d4;
+            --accent-glow: rgba(6, 182, 212, 0.25);
+            --accent-success: #10b981;
+            --accent-warning: #f59e0b;
+            --accent-error: #ef4444;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(6,182,212,0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(6,182,212,0.05) 0%, transparent 40%);
+        }
+
+        header {
+            padding: 1.5rem 5%;
+            border-bottom: 1px solid var(--border-color);
+            background-color: rgba(19,26,44,0.6);
+            backdrop-filter: blur(12px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .logo-container { display: flex; align-items: center; gap: 0.8rem; }
+
+        .logo-dot {
+            width: 12px; height: 12px;
+            background-color: var(--accent);
+            border-radius: 50%;
+            box-shadow: 0 0 12px var(--accent);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%,100% { opacity: 0.6; }
+            50% { opacity: 1; transform: scale(1.1); }
+        }
+
+        h1 {
+            font-size: 1.4rem; font-weight: 600; letter-spacing: -0.5px;
+            background: linear-gradient(to right, #ffffff, #22d3ee);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        .tab-navigation {
+            display: flex;
+            background-color: rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+            padding: 0.25rem; border-radius: 8px; gap: 0.2rem;
+        }
+
+        .tab-btn {
+            background: none; border: none; color: var(--text-secondary);
+            padding: 0.5rem 1.2rem; border-radius: 6px; cursor: pointer;
+            font-size: 0.9rem; font-weight: 500; transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background-color: var(--accent); color: #fff;
+            box-shadow: 0 4px 12px rgba(6,182,212,0.3);
+        }
+
+        main {
+            flex: 1; padding: 2rem 5%;
+            display: grid; grid-template-columns: 350px 1fr;
+            gap: 2rem; max-width: 1700px; margin: 0 auto; width: 100%;
+        }
+        @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+
+        .sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
+
+        .card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px; padding: 1.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 8px 32px 0 rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+
+        h2 {
+            font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem;
+            display: flex; align-items: center; gap: 0.5rem; color: #fff;
+        }
+
+        .control-group { margin-bottom: 1rem; }
+
+        label {
+            display: block; font-size: 0.8rem;
+            color: var(--text-secondary); margin-bottom: 0.4rem; font-weight: 500;
+        }
+
+        .select-input, .text-input {
+            width: 100%; background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color); color: var(--text-primary);
+            padding: 0.65rem 0.85rem; border-radius: 8px; outline: none; font-size: 0.85rem;
+        }
+
+        .range-container { display: flex; align-items: center; gap: 0.8rem; }
+        .range-input { flex: 1; accent-color: var(--accent); }
+        .range-value { font-size: 0.85rem; font-weight: 600; color: var(--accent); min-width: 30px; text-align: right; }
+
+        /* Upload Area */
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 10px; padding: 1.5rem 1rem;
+            text-align: center; cursor: pointer;
+            background-color: rgba(19,26,44,0.2);
+            transition: all 0.2s ease;
+        }
+        .upload-area.dragover { border-color: var(--accent); background-color: rgba(6,182,212,0.05); }
+        .upload-icon { width: 36px; height: 36px; fill: none; stroke: var(--accent); stroke-width: 1.5; margin-bottom: 0.5rem; }
+        .upload-title { font-size: 0.85rem; font-weight: 500; margin-bottom: 0.2rem; }
+        .upload-desc { font-size: 0.75rem; color: var(--text-secondary); }
+
+        /* CPU */
+        .cpu-metric-large {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1.2rem; padding-bottom: 0.8rem;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .cpu-percent-text { font-size: 2rem; font-weight: 700; color: var(--accent); }
+        .cpu-cores-grid {
+            display: grid; grid-template-columns: repeat(2, 1fr);
+            gap: 0.6rem; max-height: 250px; overflow-y: auto; padding-right: 0.2rem;
+        }
+        .core-bar-wrapper {
+            background-color: rgba(0,0,0,0.15);
+            border: 1px solid rgba(255,255,255,0.03);
+            border-radius: 6px; padding: 0.4rem 0.6rem;
+        }
+        .core-info { display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 0.25rem; color: var(--text-secondary); }
+        .core-bar-bg { height: 5px; background-color: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
+        .core-bar-fill { height: 100%; width: 0%; background-color: var(--accent); border-radius: 3px; transition: width 0.3s ease, background-color 0.3s; }
+
+        /* Workspace */
+        .workspace { display: flex; flex-direction: column; gap: 1.5rem; }
+        .tab-content { display: none; flex-direction: column; gap: 1.5rem; animation: fadeIn 0.3s ease; }
+        .tab-content.active { display: flex; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+
+        /* Image Mode */
+        .image-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; min-height: 550px; }
+        .display-card {
+            background-color: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column;
+            box-shadow: 0 8px 32px 0 rgba(0,0,0,0.3);
+        }
+        .display-title { font-size: 0.95rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.8rem; }
+        .media-container {
+            flex: 1; border-radius: 10px; overflow: hidden;
+            background-color: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.05);
+            display: flex; justify-content: center; align-items: center; position: relative; min-height: 450px;
+        }
+        .media-view { max-width: 100%; max-height: 500px; object-fit: contain; display: none; }
+        .placeholder-text { color: var(--text-secondary); font-size: 0.85rem; text-align: center; padding: 2rem; }
+
+        /* Video Mode */
+        .video-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; min-height: 500px; }
+        .video-slot {
+            background-color: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 16px; padding: 1.2rem; display: flex; flex-direction: column;
+            box-shadow: 0 8px 32px 0 rgba(0,0,0,0.3);
+        }
+        .video-controls { display: flex; gap: 1rem; margin-top: 1rem; align-items: center; }
+
+        /* Buttons */
+        .btn {
+            background-color: var(--accent); color: #fff;
+            border: none; padding: 0.65rem 1.2rem;
+            border-radius: 8px; font-weight: 600; font-size: 0.85rem;
+            cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 0.5rem;
+        }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .btn-secondary { background-color: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-primary); }
+        .btn-secondary:hover { background-color: rgba(255,255,255,0.1); }
+        .btn-error { background-color: var(--accent-error); box-shadow: 0 4px 12px rgba(239,68,68,0.2); }
+        .btn-success { background-color: var(--accent-success); box-shadow: 0 4px 12px rgba(16,185,129,0.2); }
+
+        .file-loaded-badge {
+            background-color: rgba(6,182,212,0.1); color: #22d3ee;
+            border: 1px solid var(--border-color);
+            padding: 0.4rem 0.8rem; border-radius: 6px;
+            font-size: 0.8rem; font-weight: 500;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            max-width: 180px; display: none;
+        }
+
+        /* Spinner overlay */
+        .loading-overlay {
+            display: none; position: absolute; top:0; left:0; width:100%; height:100%;
+            background-color: rgba(11,15,25,0.85); z-index: 10;
+            flex-direction: column; justify-content: center; align-items: center; gap: 1rem; border-radius: 10px;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(6,182,212,0.15);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
+        .loading-text { font-size: 0.85rem; font-weight: 500; color: #fff; }
+
+        /* ── BATCH PROCESS TAB ─────────────────────────────────────── */
+        .batch-drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: 14px; padding: 2.5rem 1.5rem;
+            text-align: center; cursor: pointer;
+            background: linear-gradient(135deg, rgba(6,182,212,0.04), rgba(17,24,43,0.5));
+            transition: all 0.25s;
+            position: relative;
+        }
+        .batch-drop-zone.dragover {
+            border-color: var(--accent);
+            background: rgba(6,182,212,0.08);
+            box-shadow: 0 0 30px rgba(6,182,212,0.12);
+        }
+        .batch-drop-icon {
+            font-size: 2.8rem; margin-bottom: 0.7rem; display: block;
+            filter: drop-shadow(0 0 10px rgba(6,182,212,0.4));
+        }
+        .batch-drop-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.3rem; }
+        .batch-drop-sub { font-size: 0.8rem; color: var(--text-secondary); }
+
+        /* Selected files list */
+        .batch-file-list {
+            display: flex; flex-direction: column; gap: 0.5rem;
+            margin-top: 0.8rem; max-height: 180px; overflow-y: auto;
+        }
+        .batch-file-item {
+            display: flex; align-items: center; gap: 0.8rem;
+            background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px; padding: 0.5rem 0.8rem;
+            font-size: 0.8rem;
+        }
+        .batch-file-icon { font-size: 1.1rem; flex-shrink: 0; }
+        .batch-file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+        .batch-file-size { color: var(--text-secondary); flex-shrink: 0; }
+        .batch-file-remove {
+            background: none; border: none; color: var(--accent-error);
+            cursor: pointer; font-size: 1rem; flex-shrink: 0; line-height: 1;
+        }
+
+        /* Queue & Job Progress */
+        .batch-queue {
+            display: flex; flex-direction: column; gap: 0.75rem;
+            max-height: 500px; overflow-y: auto;
+        }
+        .job-card {
+            background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px; padding: 1rem 1.2rem;
+            transition: border-color 0.3s;
+        }
+        .job-card.processing { border-color: var(--accent); box-shadow: 0 0 18px rgba(6,182,212,0.1); }
+        .job-card.done     { border-color: var(--accent-success); }
+        .job-card.error    { border-color: var(--accent-error); }
+
+        .job-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.6rem; }
+        .job-status-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+            background: var(--text-secondary);
+            transition: background 0.3s;
+        }
+        .job-status-dot.pending    { background: var(--text-secondary); }
+        .job-status-dot.uploading  { background: var(--accent-warning); animation: pulseDot 1s infinite; }
+        .job-status-dot.queued     { background: var(--accent); }
+        .job-status-dot.processing { background: var(--accent); animation: pulseDot 0.7s infinite; }
+        .job-status-dot.done       { background: var(--accent-success); }
+        .job-status-dot.error      { background: var(--accent-error); }
+
+        @keyframes pulseDot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+        .job-filename { font-size: 0.88rem; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .job-status-label { font-size: 0.75rem; color: var(--text-secondary); flex-shrink: 0; }
+
+        /* Progress bar */
+        .job-progress-bg {
+            height: 6px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem;
+        }
+        .job-progress-fill {
+            height: 100%; width: 0%; border-radius: 4px;
+            background: linear-gradient(90deg, var(--accent), #22d3ee);
+            transition: width 0.4s ease;
+        }
+        .job-progress-fill.done  { background: var(--accent-success); }
+        .job-progress-fill.error { background: var(--accent-error); }
+
+        .job-meta { font-size: 0.72rem; color: var(--text-secondary); display: flex; justify-content: space-between; }
+
+        .job-download {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            margin-top: 0.5rem; font-size: 0.78rem;
+            color: var(--accent-success); text-decoration: none;
+            background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25);
+            border-radius: 6px; padding: 0.3rem 0.7rem;
+            transition: background 0.2s;
+        }
+        .job-download:hover { background: rgba(16,185,129,0.2); }
+
+        .batch-controls-row {
+            display: flex; gap: 1rem; align-items: center; justify-content: space-between;
+            flex-wrap: wrap;
+        }
+        .batch-summary {
+            font-size: 0.82rem; color: var(--text-secondary);
+        }
+        .batch-summary span { color: var(--text-primary); font-weight: 600; }
+
+        /* Device badge */
+        .device-badge {
+            display: flex; align-items: center; gap: 0.65rem;
+            padding: 0.75rem 1rem; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.07);
+            background: rgba(0,0,0,0.2);
+            margin-bottom: 0.8rem;
+        }
+        .device-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .device-info-text { display: flex; flex-direction: column; gap: 0.15rem; }
+        .device-type-label { font-size: 0.85rem; font-weight: 600; }
+        .device-sub-label  { font-size: 0.72rem; color: var(--text-secondary); }
+        .device-badge.gpu  { border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.07); }
+        .device-badge.cpu  { border-color: rgba(6,182,212,0.25);  background: rgba(6,182,212,0.05);  }
+        .vram-bar-bg { height: 4px; background: rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; margin-top:0.3rem; }
+        .vram-bar-fill { height:100%; background: var(--accent-success); border-radius:3px; transition: width 1s ease; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo-container">
+        <div class="logo-dot"></div>
+        <h1>ThirdEye — YOLO Live CPU Inference</h1>
+    </div>
+    <div class="tab-navigation">
+        <button class="tab-btn active" id="tab-image-btn">Image Mode</button>
+        <button class="tab-btn" id="tab-video-btn">Dual Video</button>
+        <button class="tab-btn" id="tab-batch-btn">⚡ Batch Process</button>
+    </div>
+</header>
+
+<main>
+    <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+    <div class="sidebar">
+
+        <!-- Device Status Badge -->
+        <div class="card" id="device-card">
+            <h2>⚙️ Inference Device</h2>
+            <div class="device-badge cpu" id="device-badge">
+                <span class="device-icon" id="device-icon">🔄</span>
+                <div class="device-info-text">
+                    <span class="device-type-label" id="device-type-label">Detecting…</span>
+                    <span class="device-sub-label"  id="device-sub-label">Loading device info</span>
+                </div>
+            </div>
+            <div id="vram-section" style="display:none;">
+                <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.25rem;">
+                    <span>VRAM Used</span>
+                    <span id="vram-label">— / —</span>
+                </div>
+                <div class="vram-bar-bg"><div class="vram-bar-fill" id="vram-bar" style="width:0%"></div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Model Configurations</h2>
+            <div class="control-group">
+                <label>Model Format</label>
+                <select class="select-input" id="model-type">
+                    <option value="pt" selected>PyTorch (.pt)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="img-size">Input Resolution (imgsz)</label>
+                <select class="select-input" id="img-size">
+                    <option value="640">640 × 640 (Standard)</option>
+                    <option value="416">416 × 416 (Optimised)</option>
+                    <option value="320" selected>320 × 320 (Max FPS)</option>
+                </select>
+            </div>
+            <div class="control-group" id="video-fps-group" style="display:none;">
+                <label for="video-fps">Target Processing FPS</label>
+                <select class="select-input" id="video-fps">
+                    <option value="1">1 FPS (Min Load)</option>
+                    <option value="3">3 FPS</option>
+                    <option value="5" selected>5 FPS (Standard)</option>
+                    <option value="10">10 FPS</option>
+                    <option value="15">15 FPS (Full Speed)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="conf">Confidence Threshold</label>
+                <div class="range-container">
+                    <input type="range" class="range-input" id="conf" min="0.05" max="0.95" step="0.05" value="0.25">
+                    <span class="range-value" id="conf-val">0.25</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>CPU Utilisation Monitor</h2>
+            <div class="cpu-metric-large">
+                <span style="font-size:0.95rem;">Overall CPU Load</span>
+                <span class="cpu-percent-text" id="cpu-percent">0.0%</span>
+            </div>
+            <div class="cpu-cores-grid" id="cpu-cores-container"></div>
+        </div>
+    </div>
+
+    <!-- ── Workspace ───────────────────────────────────────────────── -->
+    <div class="workspace">
+
+        <!-- IMAGE TAB -->
+        <div class="tab-content active" id="tab-image-content">
+            <div class="card" style="padding:1.2rem;">
+                <h2>Upload Panel</h2>
+                <div class="upload-area" id="img-drop-zone">
+                    <svg class="upload-icon" viewBox="0 0 24 24">
+                        <path d="M12 5v14M5 12h14" stroke-linecap="round"/>
+                        <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round"/>
+                        <path d="m16 8-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <div class="upload-title">Drag &amp; Drop Image</div>
+                    <div class="upload-desc">or click to browse</div>
+                    <input type="file" id="img-file-input" accept="image/*" style="display:none;">
+                </div>
+            </div>
+            <div class="image-layout">
+                <div class="display-card">
+                    <div class="display-title">Original Image</div>
+                    <div class="media-container">
+                        <img id="img-orig-view" class="media-view" alt="Original">
+                        <div class="placeholder-text" id="img-orig-ph">Upload an image to start</div>
+                    </div>
+                </div>
+                <div class="display-card">
+                    <div class="display-title">YOLO Bounding Boxes</div>
+                    <div class="media-container">
+                        <div class="loading-overlay" id="img-loading">
+                            <div class="spinner"></div>
+                            <div class="loading-text">Running Inference…</div>
+                        </div>
+                        <img id="img-det-view" class="media-view" alt="Detections">
+                        <div class="placeholder-text" id="img-det-ph">Detections will display here</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DUAL VIDEO TAB -->
+        <div class="tab-content" id="tab-video-content">
+            <div class="video-layout">
+                <div class="video-slot">
+                    <div class="display-title">Video Feed 1</div>
+                    <div class="media-container" style="min-height:350px;">
+                        <div class="loading-overlay" id="v1-loading">
+                            <div class="spinner"></div>
+                            <div class="loading-text">Processing stream…</div>
+                        </div>
+                        <img id="video-view-1" class="media-view" style="width:100%;height:100%;object-fit:contain;" alt="Feed 1">
+                        <div class="placeholder-text" id="v1-ph">No video file selected</div>
+                    </div>
+                    <div class="video-controls">
+                        <button class="btn btn-secondary" onclick="document.getElementById('video-input-1').click()">Choose Video</button>
+                        <span class="file-loaded-badge" id="v1-badge">None</span>
+                        <input type="file" id="video-input-1" accept="video/*" style="display:none;" onchange="uploadVideoFile(1, this.files[0])">
+                    </div>
+                </div>
+                <div class="video-slot">
+                    <div class="display-title">Video Feed 2</div>
+                    <div class="media-container" style="min-height:350px;">
+                        <div class="loading-overlay" id="v2-loading">
+                            <div class="spinner"></div>
+                            <div class="loading-text">Processing stream…</div>
+                        </div>
+                        <img id="video-view-2" class="media-view" style="width:100%;height:100%;object-fit:contain;" alt="Feed 2">
+                        <div class="placeholder-text" id="v2-ph">No video file selected</div>
+                    </div>
+                    <div class="video-controls">
+                        <button class="btn btn-secondary" onclick="document.getElementById('video-input-2').click()">Choose Video</button>
+                        <span class="file-loaded-badge" id="v2-badge">None</span>
+                        <input type="file" id="video-input-2" accept="video/*" style="display:none;" onchange="uploadVideoFile(2, this.files[0])">
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="display:flex;gap:1rem;justify-content:flex-end;align-items:center;">
+                <span style="font-size:0.85rem;color:var(--text-secondary)">Process one or both videos in parallel</span>
+                <button class="btn btn-error" id="btn-stop-streams" style="display:none;" onclick="stopAllVideoStreams()">Stop Processing</button>
+                <button class="btn" id="btn-start-streams" onclick="startAllVideoStreams()">Start Parallel Analysis</button>
+            </div>
+        </div>
+
+        <!-- BATCH PROCESS TAB -->
+        <div class="tab-content" id="tab-batch-content">
+
+            <!-- Drop zone + file list -->
+            <div class="card">
+                <h2>⚡ Bulk Video Upload &amp; Annotate</h2>
+
+                <div class="batch-drop-zone" id="batch-drop-zone">
+                    <span class="batch-drop-icon">🎬</span>
+                    <div class="batch-drop-title">Drop multiple videos here</div>
+                    <div class="batch-drop-sub">MP4 · AVI · MOV · MKV · WMV — or click to browse</div>
+                    <input type="file" id="batch-file-input" accept="video/*" multiple style="display:none;">
+                </div>
+
+                <!-- Selected file list -->
+                <div class="batch-file-list" id="batch-file-list"></div>
+
+                <div class="batch-controls-row" style="margin-top:1rem;">
+                    <div class="batch-summary" id="batch-summary">No videos selected</div>
+                    <div style="display:flex;gap:0.75rem;">
+                        <button class="btn btn-secondary" id="btn-clear-batch" onclick="clearBatchSelection()" style="display:none;">Clear All</button>
+                        <button class="btn" id="btn-start-batch" onclick="startBatchProcess()" style="display:none;">
+                            ▶ Start Processing
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live queue / progress -->
+            <div class="card" id="batch-queue-card" style="display:none;">
+                <h2 style="margin-bottom:0.5rem;">📋 Processing Queue</h2>
+                <div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:1rem;" id="batch-queue-summary">
+                    Initialising…
+                </div>
+                <div class="batch-queue" id="batch-queue"></div>
+            </div>
+
+        </div>
+
+    </div><!-- /workspace -->
+
+    <!-- Logs console full-width -->
+    <div class="card" id="logs-card" style="display:flex;flex-direction:column;min-height:200px;grid-column:1/-1;margin-top:1rem;">
+        <h2>System Logs Console</h2>
+        <div id="logs-container" style="flex:1;background:rgba(0,0,0,0.4);border:1px solid var(--border-color);border-radius:8px;padding:0.75rem;font-family:monospace;font-size:0.75rem;color:#34d399;overflow-y:auto;max-height:200px;min-height:120px;white-space:pre-wrap;word-break:break-all;"></div>
+    </div>
+</main>
+
+<script>
+const API_BASE = 'http://127.0.0.1:5000';
+
+// ── Logging ──────────────────────────────────────────────────────────────────
+function addLog(source, message, type = 'info') {
+    const container = document.getElementById('logs-container');
+    if (!container) return;
+    const ts = new Date().toLocaleTimeString();
+    const el = document.createElement('div');
+    el.style.cssText = 'margin-bottom:4px;line-height:1.3;';
+    const colors = { success:'#34d399', warning:'#fbbf24', error:'#f87171', system:'#60a5fa' };
+    const c = colors[type] || '#d1d5db';
+    el.innerHTML = `<span style="color:#6b7280">[${ts}]</span> <strong style="color:${c}">[${source}]</strong> ${message}`;
+    container.appendChild(el);
+    container.scrollTop = container.scrollHeight;
+}
+
+function pollBackendLogs() {
+    fetch(`${API_BASE}/get_logs`).then(r => r.json()).then(data => {
+        (data.logs || []).forEach(line => {
+            let t = 'info';
+            if (line.includes('Error') || line.includes('failed')) t = 'error';
+            else if (line.includes('Starting') || line.includes('closed') || line.includes('Batch')) t = 'system';
+            else if (line.includes('Frame') || line.includes('Finished') || line.includes('Done')) t = 'success';
+            addLog('Backend', line, t);
+        });
+    }).catch(() => {});
+}
+setInterval(pollBackendLogs, 1000);
+
+// ── Config helpers ───────────────────────────────────────────────────────────
+function logConfigChange(param, val) {
+    fetch(`${API_BASE}/log_config`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ parameter: param, value: val })
+    }).catch(() => {});
+}
+
+// ── Tab navigation ───────────────────────────────────────────────────────────
+const tabs = [
+    { btn:'tab-image-btn', content:'tab-image-content' },
+    { btn:'tab-video-btn', content:'tab-video-content' },
+    { btn:'tab-batch-btn', content:'tab-batch-content' }
+];
+tabs.forEach(({ btn, content }) => {
+    document.getElementById(btn).addEventListener('click', () => {
+        tabs.forEach(t => {
+            document.getElementById(t.btn).classList.remove('active');
+            document.getElementById(t.content).classList.remove('active');
+        });
+        document.getElementById(btn).classList.add('active');
+        document.getElementById(content).classList.add('active');
+        const isVideo = content === 'tab-video-content';
+        document.getElementById('video-fps-group').style.display = isVideo ? 'block' : 'none';
+        if (!isVideo) stopAllVideoStreams();
+        addLog('System', `Switched to ${btn.replace('tab-','').replace('-btn','')} tab.`, 'system');
+    });
+});
+
+// ── Conf slider ──────────────────────────────────────────────────────────────
+const confSlider = document.getElementById('conf');
+const confVal    = document.getElementById('conf-val');
+confSlider.addEventListener('input',  e => confVal.textContent = parseFloat(e.target.value).toFixed(2));
+confSlider.addEventListener('change', e => logConfigChange('Confidence', parseFloat(e.target.value).toFixed(2)));
+document.getElementById('img-size').addEventListener('change', e => logConfigChange('Resolution', `${e.target.value}x${e.target.value}`));
+
+// ── CPU Monitor ──────────────────────────────────────────────────────────────
+let coresCreated = false, cpuTick = 0;
+function updateCpu() {
+    fetch(`${API_BASE}/cpu_stats`).then(r => r.json()).then(d => {
+        const el = document.getElementById('cpu-percent');
+        el.textContent = `${d.cpu_percent.toFixed(1)}%`;
+        el.style.color = d.cpu_percent > 85 ? 'var(--accent-error)' : d.cpu_percent > 50 ? 'var(--accent-warning)' : 'var(--accent-success)';
+        const cc = document.getElementById('cpu-cores-container');
+        if (!coresCreated && d.cpu_cores) {
+            cc.innerHTML = '';
+            d.cpu_cores.forEach((_, i) => {
+                const div = document.createElement('div');
+                div.className = 'core-bar-wrapper';
+                div.innerHTML = `<div class="core-info"><span>Core ${i+1}</span><span id="cv-${i}">0%</span></div><div class="core-bar-bg"><div class="core-bar-fill" id="cf-${i}"></div></div>`;
+                cc.appendChild(div);
+            });
+            coresCreated = true;
+        }
+        (d.cpu_cores || []).forEach((v, i) => {
+            const tv = document.getElementById(`cv-${i}`);
+            const tf = document.getElementById(`cf-${i}`);
+            if (tv && tf) {
+                tv.textContent = `${v.toFixed(0)}%`;
+                tf.style.width = `${v}%`;
+                const col = v > 85 ? 'var(--accent-error)' : v > 50 ? 'var(--accent-warning)' : 'var(--accent)';
+                tf.style.backgroundColor = col; tv.style.color = col;
+            }
+        });
+        if (++cpuTick >= 10) { addLog('System', `Heartbeat — CPU ${d.cpu_percent.toFixed(1)}%`, 'system'); cpuTick = 0; }
+    }).catch(() => {});
+}
+setInterval(updateCpu, 500);
+
+// ── Image Mode ───────────────────────────────────────────────────────────────
+const imgDrop = document.getElementById('img-drop-zone');
+const imgInp  = document.getElementById('img-file-input');
+imgDrop.addEventListener('click', () => imgInp.click());
+imgDrop.addEventListener('dragover', e => { e.preventDefault(); imgDrop.classList.add('dragover'); });
+imgDrop.addEventListener('dragleave', () => imgDrop.classList.remove('dragover'));
+imgDrop.addEventListener('drop', e => { e.preventDefault(); imgDrop.classList.remove('dragover'); if (e.dataTransfer.files[0]) processImage(e.dataTransfer.files[0]); });
+imgInp.addEventListener('change', e => { if (e.target.files[0]) processImage(e.target.files[0]); });
+
+function processImage(file) {
+    const origView = document.getElementById('img-orig-view');
+    const detView  = document.getElementById('img-det-view');
+    const origPh   = document.getElementById('img-orig-ph');
+    const detPh    = document.getElementById('img-det-ph');
+    const loading  = document.getElementById('img-loading');
+    const reader   = new FileReader();
+    reader.onload = e => { origView.src = e.target.result; origView.style.display = 'block'; origPh.style.display = 'none'; };
+    reader.readAsDataURL(file);
+    loading.style.display = 'flex'; detView.style.display = 'none'; detPh.style.display = 'none';
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('img_size', document.getElementById('img-size').value);
+    fd.append('conf', confSlider.value);
+    fd.append('model_type', 'pt');
+    addLog('Client', `Sending "${file.name}" for detection…`, 'info');
+    fetch(`${API_BASE}/detect`, { method:'POST', body:fd })
+        .then(r => r.json()).then(data => {
+            loading.style.display = 'none';
+            if (data.success) {
+                detView.src = `data:image/png;base64,${data.image_base64}`;
+                detView.style.display = 'block';
+                addLog('Backend', `Done in ${data.inference_time_ms}ms — ${data.total_detections} objects`, 'success');
+            } else {
+                addLog('Backend', `Error: ${data.error}`, 'error');
+            }
+        }).catch(() => { loading.style.display = 'none'; addLog('Client', 'Server connection failed.', 'error'); });
+}
+
+// ── Dual Video Mode ──────────────────────────────────────────────────────────
+let loadedVideos = { 1: null, 2: null };
+
+function uploadVideoFile(id, file) {
+    if (!file) return;
+    const badge = document.getElementById(`v${id}-badge`);
+    badge.style.display = 'block'; badge.textContent = 'Uploading…';
+    addLog('Client', `Uploading video "${file.name}" to Feed ${id}…`, 'info');
+    const fd = new FormData(); fd.append('video', file);
+    fetch(`${API_BASE}/upload_video`, { method:'POST', body:fd })
+        .then(r => r.json()).then(d => {
+            if (d.success) {
+                loadedVideos[id] = d.filename;
+                badge.textContent = file.name;
+                badge.style.backgroundColor = 'rgba(16,185,129,0.1)';
+                badge.style.color = 'var(--accent-success)';
+                document.getElementById(`v${id}-ph`).textContent = 'Video loaded. Ready to stream.';
+                addLog('Backend', `Feed ${id} upload OK.`, 'success');
+            } else {
+                badge.textContent = 'Upload failed'; badge.style.color = 'var(--accent-error)';
+                addLog('Backend', `Feed ${id} upload failed: ${d.error}`, 'error');
+            }
+        }).catch(() => { badge.textContent = 'Error'; badge.style.color = 'var(--accent-error)'; });
+}
+
+function startAllVideoStreams() {
+    const size = document.getElementById('img-size').value;
+    const conf = confSlider.value;
+    const fps  = document.getElementById('video-fps').value;
+    let started = false;
+    [1, 2].forEach(id => {
+        if (!loadedVideos[id]) return;
+        const url = `${API_BASE}/video_feed/${loadedVideos[id]}?img_size=${size}&conf=${conf}&target_fps=${fps}&model_type=pt&feed_id=${id}`;
+        const vw = document.getElementById(`video-view-${id}`);
+        vw.src = url; vw.style.display = 'block';
+        document.getElementById(`v${id}-ph`).style.display = 'none';
+        document.getElementById(`v${id}-loading`).style.display = 'flex';
+        vw.onload = () => document.getElementById(`v${id}-loading`).style.display = 'none';
+        started = true;
+    });
+    if (started) {
+        document.getElementById('btn-start-streams').style.display = 'none';
+        document.getElementById('btn-stop-streams').style.display = 'flex';
+        addLog('Client', `Streams started (imgsz ${size}, conf ${conf}, ${fps} fps, PT model)`, 'warning');
+    } else {
+        addLog('Client', 'No videos loaded.', 'error');
+        alert('Upload at least one video first.');
+    }
+}
+
+function stopAllVideoStreams() {
+    [1, 2].forEach(id => {
+        const vw = document.getElementById(`video-view-${id}`);
+        vw.src = ''; vw.style.display = 'none';
+        document.getElementById(`v${id}-ph`).style.display = 'block';
+        document.getElementById(`v${id}-loading`).style.display = 'none';
+    });
+    document.getElementById('btn-start-streams').style.display = 'flex';
+    document.getElementById('btn-stop-streams').style.display = 'none';
+    addLog('Client', 'Streams stopped.', 'error');
+}
+
+// ── BATCH PROCESS ─────────────────────────────────────────────────────────────
+let batchFiles = [];       // File objects selected by user
+let batchJobs  = [];       // { file, jobId, status, progress, outputFile }
+let batchPollingInterval = null;
+
+const batchDrop  = document.getElementById('batch-drop-zone');
+const batchInput = document.getElementById('batch-file-input');
+
+batchDrop.addEventListener('click', () => batchInput.click());
+batchDrop.addEventListener('dragover',  e => { e.preventDefault(); batchDrop.classList.add('dragover'); });
+batchDrop.addEventListener('dragleave', () => batchDrop.classList.remove('dragover'));
+batchDrop.addEventListener('drop', e => {
+    e.preventDefault(); batchDrop.classList.remove('dragover');
+    addFilesToBatch([...e.dataTransfer.files]);
+});
+batchInput.addEventListener('change', e => {
+    addFilesToBatch([...e.target.files]);
+    batchInput.value = '';
+});
+
+function addFilesToBatch(files) {
+    const videoTypes = ['video/mp4','video/avi','video/quicktime','video/x-matroska','video/x-ms-wmv','video/webm','video/x-flv'];
+    files.forEach(f => {
+        if (!videoTypes.includes(f.type) && !f.name.match(/\.(mp4|avi|mov|mkv|wmv|flv|webm)$/i)) return;
+        if (batchFiles.find(x => x.name === f.name && x.size === f.size)) return; // deduplicate
+        batchFiles.push(f);
+    });
+    renderBatchFileList();
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024*1024) return `${(bytes/1024).toFixed(0)} KB`;
+    return `${(bytes/(1024*1024)).toFixed(1)} MB`;
+}
+
+function renderBatchFileList() {
+    const list = document.getElementById('batch-file-list');
+    const summary = document.getElementById('batch-summary');
+    list.innerHTML = '';
+    batchFiles.forEach((f, i) => {
+        const item = document.createElement('div');
+        item.className = 'batch-file-item';
+        item.innerHTML = `
+            <span class="batch-file-icon">🎥</span>
+            <span class="batch-file-name">${f.name}</span>
+            <span class="batch-file-size">${formatSize(f.size)}</span>
+            <button class="batch-file-remove" onclick="removeBatchFile(${i})" title="Remove">✕</button>
+        `;
+        list.appendChild(item);
+    });
+    const count = batchFiles.length;
+    summary.innerHTML = count
+        ? `<span>${count}</span> video${count>1?'s':''} selected`
+        : 'No videos selected';
+    document.getElementById('btn-start-batch').style.display = count ? 'flex' : 'none';
+    document.getElementById('btn-clear-batch').style.display = count ? 'flex' : 'none';
+}
+
+function removeBatchFile(idx) {
+    batchFiles.splice(idx, 1);
+    renderBatchFileList();
+}
+
+function clearBatchSelection() {
+    batchFiles = [];
+    renderBatchFileList();
+}
+
+async function startBatchProcess() {
+    if (!batchFiles.length) { alert('Select at least one video.'); return; }
+
+    // Disable controls
+    document.getElementById('btn-start-batch').disabled = true;
+    document.getElementById('btn-clear-batch').disabled = true;
+
+    // Prepare job list UI
+    batchJobs = batchFiles.map(f => ({ file: f, jobId: null, status: 'pending', progress: 0, frames: 0, total: 0, outputFile: null }));
+    document.getElementById('batch-queue-card').style.display = 'block';
+    renderBatchQueue();
+
+    const imgsz = document.getElementById('img-size').value;
+    const conf  = confSlider.value;
+
+    addLog('Client', `Starting batch: ${batchJobs.length} video(s) | imgsz=${imgsz} conf=${conf} model=PT`, 'warning');
+
+    // Upload and process each video ONE BY ONE
+    for (let i = 0; i < batchJobs.length; i++) {
+        const job = batchJobs[i];
+        job.status = 'uploading';
+        renderBatchQueue();
+        addLog('Client', `[${i+1}/${batchJobs.length}] Uploading "${job.file.name}"…`, 'info');
+
+        // 1) Upload
+        try {
+            const fd = new FormData();
+            fd.append('video', job.file);
+            const upRes  = await fetch(`${API_BASE}/batch_upload`, { method:'POST', body: fd });
+            const upData = await upRes.json();
+            if (!upData.success) throw new Error(upData.error || 'Upload failed');
+            job.uploadedFilename = upData.filename;
+            addLog('Backend', `Uploaded → ${upData.filename}`, 'success');
+        } catch(e) {
+            job.status = 'error'; job.errorMsg = e.message;
+            renderBatchQueue(); addLog('Backend', `Upload error: ${e.message}`, 'error'); continue;
+        }
+
+        // 2) Start processing job
+        job.status = 'queued';
+        renderBatchQueue();
+        try {
+            const procRes  = await fetch(`${API_BASE}/batch_process`, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ filename: job.uploadedFilename, imgsz: parseInt(imgsz), conf: parseFloat(conf) })
+            });
+            const procData = await procRes.json();
+            if (!procData.success) throw new Error(procData.error || 'Start failed');
+            job.jobId = procData.job_id;
+            addLog('Backend', `Job started (ID: ${job.jobId})`, 'system');
+        } catch(e) {
+            job.status = 'error'; job.errorMsg = e.message;
+            renderBatchQueue(); addLog('Backend', `Process start error: ${e.message}`, 'error'); continue;
+        }
+
+        // 3) Poll until done
+        job.status = 'processing';
+        renderBatchQueue();
+        await pollUntilDone(job, i);
+    }
+
+    // Re-enable controls
+    document.getElementById('btn-start-batch').disabled = false;
+    document.getElementById('btn-clear-batch').disabled = false;
+    addLog('System', `Batch complete. ${batchJobs.filter(j=>j.status==='done').length}/${batchJobs.length} succeeded.`, 'success');
+}
+
+function pollUntilDone(job, idx) {
+    return new Promise(resolve => {
+        const interval = setInterval(async () => {
+            try {
+                const res  = await fetch(`${API_BASE}/batch_status/${job.jobId}`);
+                const data = await res.json();
+                job.status     = data.status;
+                job.progress   = data.progress || 0;
+                job.frames     = data.frames_done || 0;
+                job.total      = data.total_frames || 0;
+                job.outputFile = data.output_file || null;
+                job.fps        = data.fps || 0;
+                renderBatchQueue();
+                if (data.status === 'done') {
+                    addLog('Backend', `✅ [${idx+1}] "${job.file.name}" done → ${data.output_file}`, 'success');
+                    clearInterval(interval); resolve();
+                } else if (data.status === 'error') {
+                    job.errorMsg = data.error || 'Processing error';
+                    addLog('Backend', `❌ [${idx+1}] "${job.file.name}" failed: ${job.errorMsg}`, 'error');
+                    clearInterval(interval); resolve();
+                }
+            } catch(e) { /* transient network hiccup, keep polling */ }
+        }, 800);
+    });
+}
+
+function renderBatchQueue() {
+    const queue = document.getElementById('batch-queue');
+    queue.innerHTML = '';
+    const done = batchJobs.filter(j => j.status === 'done').length;
+    const errs = batchJobs.filter(j => j.status === 'error').length;
+    document.getElementById('batch-queue-summary').textContent =
+        `${done} done · ${errs} failed · ${batchJobs.length - done - errs} remaining`;
+
+    batchJobs.forEach((job, i) => {
+        const card = document.createElement('div');
+        card.className = `job-card ${['processing','uploading','queued'].includes(job.status) ? 'processing' : job.status}`;
+
+        const statusLabels = {
+            pending:'Waiting', uploading:'Uploading…', queued:'Queued',
+            processing:'Processing…', done:'Done ✓', error:'Error ✗'
+        };
+
+        const pct = job.total > 0 ? Math.round((job.frames / job.total) * 100) : (job.status === 'done' ? 100 : 0);
+        const fillClass = job.status === 'done' ? 'done' : job.status === 'error' ? 'error' : '';
+
+        card.innerHTML = `
+            <div class="job-header">
+                <div class="job-status-dot ${job.status}"></div>
+                <div class="job-filename">${i+1}. ${job.file.name}</div>
+                <div class="job-status-label">${statusLabels[job.status] || job.status}</div>
+            </div>
+            <div class="job-progress-bg">
+                <div class="job-progress-fill ${fillClass}" style="width:${pct}%"></div>
+            </div>
+            <div class="job-meta">
+                <span>${job.frames && job.total ? `Frame ${job.frames} / ${job.total}` : (job.status === 'done' ? 'Complete' : job.errorMsg || '')}</span>
+                <span>${pct}%${job.fps > 0 ? ` · ${job.fps.toFixed(1)} fps` : ''}</span>
+            </div>
+            ${job.status === 'done' && job.outputFile ? `<a class="job-download" href="${API_BASE}/download_annotated/${job.outputFile}" download>⬇ Download annotated video</a>` : ''}
+        `;
+        queue.appendChild(card);
+    });
+}
+
+addLog('System', 'ThirdEye Dashboard loaded. Backend at ' + API_BASE, 'system');
+addLog('System', 'Model: PyTorch (.pt) only. Ready.', 'info');
+
+// ── Device info badge ────────────────────────────────────────────────────────
+let vramPollInterval = null;
+
+function fetchDeviceInfo() {
+    fetch(`${API_BASE}/device_info`).then(r => r.json()).then(d => {
+        const badge    = document.getElementById('device-badge');
+        const icon     = document.getElementById('device-icon');
+        const typeEl   = document.getElementById('device-type-label');
+        const subEl    = document.getElementById('device-sub-label');
+        const vramSec  = document.getElementById('vram-section');
+
+        if (d.use_gpu) {
+            badge.className = 'device-badge gpu';
+            icon.textContent  = '🟢';
+            typeEl.textContent = `GPU — ${d.gpu_name}`;
+            typeEl.style.color = 'var(--accent-success)';
+            subEl.textContent  = `${d.gpu_mem_gb} GB VRAM · CUDA enabled`;
+            vramSec.style.display = 'block';
+            addLog('System', `GPU detected: ${d.gpu_name} (${d.gpu_mem_gb} GB VRAM)`, 'success');
+            // Poll VRAM every 2s
+            vramPollInterval = setInterval(updateVram, 2000);
+        } else {
+            badge.className = 'device-badge cpu';
+            icon.textContent  = '🔵';
+            typeEl.textContent = 'CPU Mode';
+            typeEl.style.color = 'var(--accent)';
+            subEl.textContent  = 'No CUDA GPU detected — running on CPU';
+            vramSec.style.display = 'none';
+            addLog('System', 'No GPU detected. Inference running on CPU.', 'info');
+        }
+    }).catch(() => {
+        document.getElementById('device-type-label').textContent = 'Backend offline';
+        document.getElementById('device-sub-label').textContent  = 'Could not reach server';
+    });
+}
+
+function updateVram() {
+    fetch(`${API_BASE}/device_info`).then(r => r.json()).then(d => {
+        if (!d.use_gpu) return;
+        const used     = d.gpu_mem_used_gb    || 0;
+        const total    = d.gpu_mem_gb         || 1;
+        const pct      = Math.min(100, Math.round(used / total * 100));
+        document.getElementById('vram-label').textContent = `${used.toFixed(2)} / ${total} GB (${pct}%)`;
+        const bar = document.getElementById('vram-bar');
+        bar.style.width = `${pct}%`;
+        bar.style.backgroundColor = pct > 85 ? 'var(--accent-error)' : pct > 60 ? 'var(--accent-warning)' : 'var(--accent-success)';
+    }).catch(() => {});
+}
+
+fetchDeviceInfo();
+</script>
+</body>
+</html>
